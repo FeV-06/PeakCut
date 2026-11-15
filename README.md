@@ -158,12 +158,13 @@ Add PeakCut to your AI agent's MCP settings (e.g. `claude_desktop_config.json`, 
 
 The server speaks standard JSON-RPC 2.0 over `stdio` and controls the running PeakCut web instance.
 
-#### Available MCP Tools
+#### Available MCP Tools (Full HTTP API Parity)
 
 | Tool | What it does |
 |---|---|
 | `peakcut_get_system_status` | Server metrics, queue depth, disk/upload limits, and active AI model |
 | `peakcut_preview_url` | Video metadata preview (title, uploader, duration, thumbnail) without downloading |
+| `peakcut_preview_channel` | Channel profile and subscriber inspection before adding a workspace |
 | `peakcut_submit_video_url` | Queue YouTube, Twitch, or Kick video for clipping |
 | `peakcut_upload_local_video` | Ingest local `.mp4`/`.mov` files directly from disk |
 | `peakcut_list_jobs` | List active, queued, and completed clipping runs |
@@ -172,11 +173,20 @@ The server speaks standard JSON-RPC 2.0 over `stdio` and controls the running Pe
 | `peakcut_render_clip` | Render/remake vertical 9:16 clips with customizable style, layout, hook, title, and timestamps |
 | `peakcut_export_clips_archive` | Download or stream multiple clips as a ZIP archive |
 | `peakcut_delete_job` / `peakcut_delete_clip` | Delete jobs or specific clips to free disk space |
+| `peakcut_bulk_delete` | Mass delete multiple video jobs and individual clips in one call |
 | `peakcut_list_creators` / `peakcut_create_creator` | Manage creator workspaces and channel links |
+| `peakcut_update_creator` / `peakcut_delete_creator` | Update workspace rules (styles, thresholds, autopost) or delete workspaces |
 | `peakcut_start_live_monitoring` | Live stream rolling-buffer monitoring |
 | `peakcut_capture_live_moment` | Force-cut highlight from active stream buffer |
 | `peakcut_stop_live_monitoring` | Terminate live capture worker |
 | `peakcut_list_connected_accounts` / `peakcut_publish_clip` | Auto-post to connected YouTube, TikTok, or Instagram accounts |
+| `peakcut_disconnect_account` | Remove a connected social publishing account |
+| `peakcut_manage_post` | Cancel a queued post or retry a failed post |
+| `peakcut_get_publishing_overview` | High-level metrics across all connected accounts and queues |
+| `peakcut_get_ai_usage` | Detailed token and call consumption breakdown by creator and video |
+| `peakcut_get_ai_config` / `peakcut_update_ai_config` | Inspect or reconfigure active AI provider, model list, and base URL |
+| `peakcut_list_ai_models` / `peakcut_test_ai_connection` | Discover models from an AI provider endpoint and test connectivity |
+| `peakcut_get_notifications` / `peakcut_mark_notifications_read` | Inspect and manage in-app activity notifications |
 
 ## Updating
 

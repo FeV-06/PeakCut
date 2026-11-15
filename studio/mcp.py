@@ -225,6 +225,79 @@ class PeakCutClient:
         with self._client() as client:
             return self._check(client.post("/api/posts", json=payload))
 
+    def preview_channel(self, url: str) -> Dict[str, Any]:
+        with self._client() as client:
+            return self._check(client.get("/api/channel-preview", params={"url": url}))
+
+    def update_creator(self, creator_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:
+        with self._client() as client:
+            return self._check(client.put(f"/api/creators/{creator_id}", json=updates))
+
+    def delete_creator(self, creator_id: str) -> Dict[str, Any]:
+        with self._client() as client:
+            return self._check(client.delete(f"/api/creators/{creator_id}"))
+
+    def disconnect_account(self, account_id: str) -> Dict[str, Any]:
+        with self._client() as client:
+            return self._check(client.delete(f"/api/accounts/{account_id}"))
+
+    def manage_post(self, post_id: str, action: str) -> Dict[str, Any]:
+        if action not in ("cancel", "retry"):
+            raise ValueError("Post action must be 'cancel' or 'retry'")
+        with self._client() as client:
+            return self._check(client.post(f"/api/posts/{post_id}/{action}"))
+
+    def get_publishing_overview(self) -> Dict[str, Any]:
+        with self._client() as client:
+            return self._check(client.get("/api/overview"))
+
+    def get_ai_usage(self) -> Dict[str, Any]:
+        with self._client() as client:
+            return self._check(client.get("/api/usage"))
+
+    def get_ai_config(self) -> Dict[str, Any]:
+        with self._client() as client:
+            return self._check(client.get("/api/ai"))
+
+    def update_ai_config(
+        self, provider: str, models: Any, base_url: str = "", key: Optional[str] = None
+    ) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {"provider": provider, "models": models, "base_url": base_url}
+        if key is not None:
+            payload["key"] = key
+        with self._client() as client:
+            return self._check(client.put("/api/ai", json=payload))
+
+    def list_ai_models(
+        self, provider: Optional[str] = None, base_url: Optional[str] = None, key: Optional[str] = None
+    ) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {}
+        if provider:
+            payload["provider"] = provider
+        if base_url:
+            payload["base_url"] = base_url
+        if key:
+            payload["key"] = key
+        with self._client() as client:
+            return self._check(client.post("/api/ai/models", json=payload))
+
+    def test_ai_connection(self) -> Dict[str, Any]:
+        with self._client() as client:
+            return self._check(client.post("/api/ai/test"))
+
+    def get_notifications(self) -> Dict[str, Any]:
+        with self._client() as client:
+            return self._check(client.get("/api/notifications"))
+
+    def mark_notifications_read(self) -> Dict[str, Any]:
+        with self._client() as client:
+            return self._check(client.post("/api/notifications/read"))
+
+    def bulk_delete(self, videos: Optional[List[str]] = None, clips: Optional[List[List[str]]] = None) -> Dict[str, Any]:
+        payload = {"videos": videos or [], "clips": clips or []}
+        with self._client() as client:
+            return self._check(client.post("/api/bulk/delete", json=payload))
+
 
 TOOLS = [
     {
@@ -244,6 +317,20 @@ TOOLS = [
                 "url": {
                     "type": "string",
                     "description": "YouTube, Twitch, or Kick link to preview.",
+                },
+            },
+            "required": ["url"],
+        },
+    },
+    {
+        "name": "peakcut_preview_channel",
+        "description": "Preview a YouTube, Twitch, or Kick channel: profile info, channel link, and details before creating or editing a workspace.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "Channel URL or handle (YouTube, Twitch, or Kick).",
                 },
             },
             "required": ["url"],
@@ -301,6 +388,29 @@ TOOLS = [
                 },
             },
             "required": ["job_id", "clip_id"],
+        },
+    },
+    {
+        "name": "peakcut_bulk_delete",
+        "description": "Bulk delete multiple video jobs and individual clips in a single operation.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "videos": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of video job IDs to delete completely.",
+                },
+                "clips": {
+                    "type": "array",
+                    "items": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Pairs of [job_id, clip_id].",
+                    },
+                    "description": "List of [job_id, clip_id] pairs to delete.",
+                },
+            },
         },
     },
     {
@@ -455,6 +565,38 @@ TOOLS = [
         },
     },
     {
+        "name": "peakcut_update_creator",
+        "description": "Update settings, thresholds, and channels for an existing creator workspace.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "creator_id": {
+                    "type": "string",
+                    "description": "ID of the creator workspace to update.",
+                },
+                "updates": {
+                    "type": "object",
+                    "description": "Dictionary of fields to update (name, channel, channels, style, layout, min_len, max_len, min_score, auto_watch, autopost, daily_cap, post_min_score, etc.).",
+                },
+            },
+            "required": ["creator_id", "updates"],
+        },
+    },
+    {
+        "name": "peakcut_delete_creator",
+        "description": "Delete a creator workspace and remove its associated configurations.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "creator_id": {
+                    "type": "string",
+                    "description": "ID of the creator workspace to delete.",
+                },
+            },
+            "required": ["creator_id"],
+        },
+    },
+    {
         "name": "peakcut_start_live_monitoring",
         "description": "Start live stream recording and highlight clipping for a creator.",
         "inputSchema": {
@@ -513,6 +655,20 @@ TOOLS = [
         },
     },
     {
+        "name": "peakcut_disconnect_account",
+        "description": "Disconnect and remove a connected social media account (YouTube, TikTok, Instagram).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "account_id": {
+                    "type": "string",
+                    "description": "The ID of the connected account to disconnect.",
+                },
+            },
+            "required": ["account_id"],
+        },
+    },
+    {
         "name": "peakcut_publish_clip",
         "description": "Queue or publish a rendered clip to a connected social media account.",
         "inputSchema": {
@@ -534,6 +690,120 @@ TOOLS = [
             "required": ["clip_id", "account_id"],
         },
     },
+    {
+        "name": "peakcut_manage_post",
+        "description": "Manage an existing social media post item (cancel queued post or retry failed post).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "post_id": {
+                    "type": "string",
+                    "description": "The post ID to act upon.",
+                },
+                "action": {
+                    "type": "string",
+                    "description": "Action to perform: 'cancel' to cancel a queued post, 'retry' to retry a failed post.",
+                    "enum": ["cancel", "retry"],
+                },
+            },
+            "required": ["post_id", "action"],
+        },
+    },
+    {
+        "name": "peakcut_get_publishing_overview",
+        "description": "Get aggregated publishing metrics across all creators, accounts, and queue states.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "peakcut_get_ai_usage",
+        "description": "Get detailed AI token usage, request counts, and cost breakdown per creator and video.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "peakcut_get_ai_config",
+        "description": "Get current AI service configuration: active provider, configured model IDs, and base URL.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "peakcut_update_ai_config",
+        "description": "Update AI service configuration (provider, model IDs, base URL, API key).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "provider": {
+                    "type": "string",
+                    "description": "AI provider ID: 'gemini', 'openai', 'anthropic', 'openrouter', 'groq', 'xai', 'ollama', 'omniroute', or 'custom'.",
+                },
+                "models": {
+                    "type": "string",
+                    "description": "Comma-separated list of model IDs to try in order (e.g. 'gemini-2.5-flash').",
+                },
+                "base_url": {
+                    "type": "string",
+                    "description": "Base URL for custom or local endpoints (e.g. 'http://localhost:20128/v1').",
+                },
+                "key": {
+                    "type": "string",
+                    "description": "Optional API key for the service.",
+                },
+            },
+            "required": ["provider", "models"],
+        },
+    },
+    {
+        "name": "peakcut_list_ai_models",
+        "description": "Discover available model IDs from an AI service endpoint.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "provider": {
+                    "type": "string",
+                    "description": "Optional provider ID (defaults to active provider).",
+                },
+                "base_url": {
+                    "type": "string",
+                    "description": "Optional base URL override.",
+                },
+                "key": {
+                    "type": "string",
+                    "description": "Optional API key to authenticate model discovery.",
+                },
+            },
+        },
+    },
+    {
+        "name": "peakcut_test_ai_connection",
+        "description": "Send a lightweight verification request using active AI settings to verify key, endpoint, and model connectivity.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "peakcut_get_notifications",
+        "description": "Get in-app activity notifications (clip completions, render notices, errors).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "peakcut_mark_notifications_read",
+        "description": "Mark all unread in-app activity notifications as read.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
 ]
 
 
@@ -551,6 +821,10 @@ def dispatch_tool(client: PeakCutClient, name: str, args: Dict[str, Any]) -> Any
         return client.delete_job(str(args.get("job_id", "")))
     elif name == "peakcut_delete_clip":
         return client.delete_clip(str(args.get("job_id", "")), str(args.get("clip_id", "")))
+    elif name == "peakcut_bulk_delete":
+        return client.bulk_delete(videos=args.get("videos"), clips=args.get("clips"))
+    elif name == "peakcut_preview_channel":
+        return client.preview_channel(str(args.get("url", "")))
     elif name == "peakcut_get_clip_media":
         return client.get_clip_media(str(args.get("job_id", "")), str(args.get("clip_id", "")))
     elif name == "peakcut_submit_video_url":
@@ -581,6 +855,10 @@ def dispatch_tool(client: PeakCutClient, name: str, args: Dict[str, Any]) -> Any
         return client.create_creator(
             str(args.get("name", "")), channel=args.get("channel"), channels=args.get("channels")
         )
+    elif name == "peakcut_update_creator":
+        return client.update_creator(str(args.get("creator_id", "")), dict(args.get("updates") or {}))
+    elif name == "peakcut_delete_creator":
+        return client.delete_creator(str(args.get("creator_id", "")))
     elif name == "peakcut_start_live_monitoring":
         return client.start_live_monitoring(
             str(args.get("creator_id", "")), platform=str(args.get("platform", "")), channel=str(args.get("channel", ""))
@@ -591,8 +869,35 @@ def dispatch_tool(client: PeakCutClient, name: str, args: Dict[str, Any]) -> Any
         return client.stop_live_monitoring(str(args.get("job_id", "")))
     elif name == "peakcut_list_connected_accounts":
         return client.list_accounts()
+    elif name == "peakcut_disconnect_account":
+        return client.disconnect_account(str(args.get("account_id", "")))
     elif name == "peakcut_publish_clip":
         return client.publish_clip(str(args.get("clip_id", "")), str(args.get("account_id", "")), caption=str(args.get("caption", "")))
+    elif name == "peakcut_manage_post":
+        return client.manage_post(str(args.get("post_id", "")), str(args.get("action", "")))
+    elif name == "peakcut_get_publishing_overview":
+        return client.get_publishing_overview()
+    elif name == "peakcut_get_ai_usage":
+        return client.get_ai_usage()
+    elif name == "peakcut_get_ai_config":
+        return client.get_ai_config()
+    elif name == "peakcut_update_ai_config":
+        return client.update_ai_config(
+            str(args.get("provider", "")),
+            args.get("models"),
+            base_url=str(args.get("base_url") or ""),
+            key=args.get("key"),
+        )
+    elif name == "peakcut_list_ai_models":
+        return client.list_ai_models(
+            provider=args.get("provider"), base_url=args.get("base_url"), key=args.get("key")
+        )
+    elif name == "peakcut_test_ai_connection":
+        return client.test_ai_connection()
+    elif name == "peakcut_get_notifications":
+        return client.get_notifications()
+    elif name == "peakcut_mark_notifications_read":
+        return client.mark_notifications_read()
     else:
         raise ValueError(f"Unknown tool: {name}")
 

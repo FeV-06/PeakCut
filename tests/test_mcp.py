@@ -126,6 +126,54 @@ class MockPeakCutClient(mcp.PeakCutClient):
     def publish_clip(self, clip_id: str, account_id: str, caption: str = "") -> Dict[str, Any]:
         return {"id": "post_1", "clip_id": clip_id, "account_id": account_id, "caption": caption}
 
+    def preview_channel(self, url: str) -> Dict[str, Any]:
+        return {"title": "Sample Channel", "channel": url, "subscribers": "100K"}
+
+    def update_creator(self, creator_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:
+        return {"id": creator_id, "updated": True, **updates}
+
+    def delete_creator(self, creator_id: str) -> Dict[str, Any]:
+        return {"id": creator_id, "deleted": True}
+
+    def disconnect_account(self, account_id: str) -> Dict[str, Any]:
+        return {"ok": True, "disconnected": account_id}
+
+    def manage_post(self, post_id: str, action: str) -> Dict[str, Any]:
+        if action not in ("cancel", "retry"):
+            raise ValueError("Invalid post action")
+        return {"ok": True, "post_id": post_id, "action": action}
+
+    def get_publishing_overview(self) -> Dict[str, Any]:
+        return {"queued": 2, "posted": 15, "failed": 0}
+
+    def get_ai_usage(self) -> Dict[str, Any]:
+        return {"calls": 42, "tokens": 85000}
+
+    def get_ai_config(self) -> Dict[str, Any]:
+        return {"provider": "OmniRoute", "models": ["antigravity/gemini-3.8-flash-medium"], "has_key": True}
+
+    def update_ai_config(
+        self, provider: str, models: Any, base_url: str = "", key: Optional[str] = None
+    ) -> Dict[str, Any]:
+        return {"provider": provider, "models": models, "base_url": base_url, "has_key": bool(key)}
+
+    def list_ai_models(
+        self, provider: Optional[str] = None, base_url: Optional[str] = None, key: Optional[str] = None
+    ) -> Dict[str, Any]:
+        return {"models": ["gemini-2.5-flash", "gpt-4o-mini"]}
+
+    def test_ai_connection(self) -> Dict[str, Any]:
+        return {"ok": True, "model": "test-model"}
+
+    def get_notifications(self) -> Dict[str, Any]:
+        return {"notifications": [{"id": "n1", "text": "Clips ready"}]}
+
+    def mark_notifications_read(self) -> Dict[str, Any]:
+        return {"ok": True}
+
+    def bulk_delete(self, videos: Optional[List[str]] = None, clips: Optional[List[List[str]]] = None) -> Dict[str, Any]:
+        return {"deleted_videos": len(videos or []), "deleted_clips": len(clips or [])}
+
 
 def test_handshake():
     client = MockPeakCutClient()
@@ -169,10 +217,12 @@ def test_tools_list():
     expected_tools = {
         "peakcut_get_system_status",
         "peakcut_preview_url",
+        "peakcut_preview_channel",
         "peakcut_list_jobs",
         "peakcut_get_job",
         "peakcut_delete_job",
         "peakcut_delete_clip",
+        "peakcut_bulk_delete",
         "peakcut_get_clip_media",
         "peakcut_submit_video_url",
         "peakcut_upload_local_video",
@@ -180,11 +230,23 @@ def test_tools_list():
         "peakcut_export_clips_archive",
         "peakcut_list_creators",
         "peakcut_create_creator",
+        "peakcut_update_creator",
+        "peakcut_delete_creator",
         "peakcut_start_live_monitoring",
         "peakcut_capture_live_moment",
         "peakcut_stop_live_monitoring",
         "peakcut_list_connected_accounts",
+        "peakcut_disconnect_account",
         "peakcut_publish_clip",
+        "peakcut_manage_post",
+        "peakcut_get_publishing_overview",
+        "peakcut_get_ai_usage",
+        "peakcut_get_ai_config",
+        "peakcut_update_ai_config",
+        "peakcut_list_ai_models",
+        "peakcut_test_ai_connection",
+        "peakcut_get_notifications",
+        "peakcut_mark_notifications_read",
     }
     check("all expected tools registered", expected_tools.issubset(tool_names), f"Missing: {expected_tools - tool_names}")
 
@@ -302,6 +364,62 @@ def test_tools_call():
     }
     res_del_job = mcp.handle_request(client, req_del_job)
     check("tools/call delete_job success", res_del_job["result"].get("isError") is False)
+
+    # Call peakcut_preview_channel
+    res = mcp.handle_request(client, {"jsonrpc": "2.0", "id": 31, "method": "tools/call", "params": {"name": "peakcut_preview_channel", "arguments": {"url": "https://youtube.com/@tech"}}})
+    check("tools/call preview_channel success", res["result"].get("isError") is False)
+
+    # Call peakcut_update_creator
+    res = mcp.handle_request(client, {"jsonrpc": "2.0", "id": 32, "method": "tools/call", "params": {"name": "peakcut_update_creator", "arguments": {"creator_id": "cr_1", "updates": {"style": "clean"}}}})
+    check("tools/call update_creator success", res["result"].get("isError") is False)
+
+    # Call peakcut_delete_creator
+    res = mcp.handle_request(client, {"jsonrpc": "2.0", "id": 33, "method": "tools/call", "params": {"name": "peakcut_delete_creator", "arguments": {"creator_id": "cr_1"}}})
+    check("tools/call delete_creator success", res["result"].get("isError") is False)
+
+    # Call peakcut_disconnect_account
+    res = mcp.handle_request(client, {"jsonrpc": "2.0", "id": 34, "method": "tools/call", "params": {"name": "peakcut_disconnect_account", "arguments": {"account_id": "acc_1"}}})
+    check("tools/call disconnect_account success", res["result"].get("isError") is False)
+
+    # Call peakcut_manage_post
+    res = mcp.handle_request(client, {"jsonrpc": "2.0", "id": 35, "method": "tools/call", "params": {"name": "peakcut_manage_post", "arguments": {"post_id": "p_1", "action": "retry"}}})
+    check("tools/call manage_post success", res["result"].get("isError") is False)
+
+    # Call peakcut_get_publishing_overview
+    res = mcp.handle_request(client, {"jsonrpc": "2.0", "id": 36, "method": "tools/call", "params": {"name": "peakcut_get_publishing_overview", "arguments": {}}})
+    check("tools/call get_publishing_overview success", res["result"].get("isError") is False)
+
+    # Call peakcut_get_ai_usage
+    res = mcp.handle_request(client, {"jsonrpc": "2.0", "id": 37, "method": "tools/call", "params": {"name": "peakcut_get_ai_usage", "arguments": {}}})
+    check("tools/call get_ai_usage success", res["result"].get("isError") is False)
+
+    # Call peakcut_get_ai_config
+    res = mcp.handle_request(client, {"jsonrpc": "2.0", "id": 38, "method": "tools/call", "params": {"name": "peakcut_get_ai_config", "arguments": {}}})
+    check("tools/call get_ai_config success", res["result"].get("isError") is False)
+
+    # Call peakcut_update_ai_config
+    res = mcp.handle_request(client, {"jsonrpc": "2.0", "id": 39, "method": "tools/call", "params": {"name": "peakcut_update_ai_config", "arguments": {"provider": "omniroute", "models": "antigravity/gemini-3.8-flash-medium"}}})
+    check("tools/call update_ai_config success", res["result"].get("isError") is False)
+
+    # Call peakcut_list_ai_models
+    res = mcp.handle_request(client, {"jsonrpc": "2.0", "id": 40, "method": "tools/call", "params": {"name": "peakcut_list_ai_models", "arguments": {}}})
+    check("tools/call list_ai_models success", res["result"].get("isError") is False)
+
+    # Call peakcut_test_ai_connection
+    res = mcp.handle_request(client, {"jsonrpc": "2.0", "id": 41, "method": "tools/call", "params": {"name": "peakcut_test_ai_connection", "arguments": {}}})
+    check("tools/call test_ai_connection success", res["result"].get("isError") is False)
+
+    # Call peakcut_get_notifications
+    res = mcp.handle_request(client, {"jsonrpc": "2.0", "id": 42, "method": "tools/call", "params": {"name": "peakcut_get_notifications", "arguments": {}}})
+    check("tools/call get_notifications success", res["result"].get("isError") is False)
+
+    # Call peakcut_mark_notifications_read
+    res = mcp.handle_request(client, {"jsonrpc": "2.0", "id": 43, "method": "tools/call", "params": {"name": "peakcut_mark_notifications_read", "arguments": {}}})
+    check("tools/call mark_notifications_read success", res["result"].get("isError") is False)
+
+    # Call peakcut_bulk_delete
+    res = mcp.handle_request(client, {"jsonrpc": "2.0", "id": 44, "method": "tools/call", "params": {"name": "peakcut_bulk_delete", "arguments": {"videos": ["v1"], "clips": [["v1", "c1"]]}}})
+    check("tools/call bulk_delete success", res["result"].get("isError") is False)
 
     # Call peakcut_submit_video_url valid
     req_submit = {
