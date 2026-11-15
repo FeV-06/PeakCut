@@ -63,6 +63,10 @@ class PeakCutClient:
         with self._client() as client:
             return self._check(client.get("/api/status"))
 
+    def preview_url(self, url: str) -> Dict[str, Any]:
+        with self._client() as client:
+            return self._check(client.get("/api/preview", params={"url": url}))
+
     def list_jobs(self) -> Dict[str, Any]:
         with self._client() as client:
             return self._check(client.get("/api/jobs"))
@@ -70,6 +74,46 @@ class PeakCutClient:
     def get_job(self, job_id: str) -> Dict[str, Any]:
         with self._client() as client:
             return self._check(client.get(f"/api/jobs/{job_id}"))
+
+    def delete_job(self, job_id: str) -> Dict[str, Any]:
+        with self._client() as client:
+            return self._check(client.delete(f"/api/jobs/{job_id}"))
+
+    def delete_clip(self, job_id: str, clip_id: str) -> Dict[str, Any]:
+        with self._client() as client:
+            return self._check(client.delete(f"/api/jobs/{job_id}/clips/{clip_id}"))
+
+    def get_clip_media(self, job_id: str, clip_id: str) -> Dict[str, Any]:
+        job = self.get_job(job_id)
+        clip = next((c for c in job.get("clips", []) if c.get("id") == clip_id), None)
+        if not clip:
+            raise ValueError(f"Clip '{clip_id}' not found in job '{job_id}'")
+
+        media_url = f"{self.base_url}/media/{job_id}/{clip_id}.mp4"
+        thumbnail_url = f"{self.base_url}/media/{job_id}/{clip_id}.jpg"
+        download_url = f"{self.base_url}/media/{job_id}/{clip_id}.mp4?download=1"
+
+        local_mp4: Optional[str] = None
+        local_ass: Optional[str] = None
+        data_dir = Path(os.environ.get("PEAKCUT_DATA") or "data")
+        matches = list(data_dir.glob(f"users/*/jobs/{job_id}/clips/{clip_id}.mp4"))
+        if matches and matches[0].is_file():
+            local_mp4 = str(matches[0].resolve())
+            ass_candidate = matches[0].with_suffix(".ass")
+            if ass_candidate.is_file():
+                local_ass = str(ass_candidate.resolve())
+
+        return {
+            "job_id": job_id,
+            "clip_id": clip_id,
+            "status": clip.get("status"),
+            "media_url": media_url,
+            "thumbnail_url": thumbnail_url,
+            "download_url": download_url,
+            "file_path": local_mp4,
+            "subtitles_path": local_ass,
+            "clip": clip,
+        }
 
     def submit_video_url(self, url: str, creator: Optional[str] = None, options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         payload: Dict[str, Any] = {"url": url}
@@ -90,9 +134,55 @@ class PeakCutClient:
             with self._client() as client:
                 return self._check(client.post("/api/upload", files=files, data=data, timeout=300.0))
 
-    def render_clip(self, job_id: str, clip_id: str, style: str = "s1") -> Dict[str, Any]:
+    def render_clip(
+        self,
+        job_id: str,
+        clip_id: str,
+        style: Optional[str] = None,
+        layout: Optional[str] = None,
+        hook: Optional[str] = None,
+        title: Optional[str] = None,
+        description: Optional[str] = None,
+        start: Optional[float] = None,
+        end: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {}
+        if style:
+            payload["style"] = style
+        if layout:
+            payload["layout"] = layout
+        if hook is not None:
+            payload["hook"] = hook
+        if title is not None:
+            payload["title"] = title
+        if description is not None:
+            payload["description"] = description
+        if start is not None:
+            payload["start"] = start
+        if end is not None:
+            payload["end"] = end
         with self._client() as client:
-            return self._check(client.post(f"/api/jobs/{job_id}/clips/{clip_id}/render", json={"style": style}))
+            return self._check(client.post(f"/api/jobs/{job_id}/clips/{clip_id}/render", json=payload))
+
+    def export_clips_archive(self, clip_pairs: List[str], output_path: Optional[str] = None) -> Dict[str, Any]:
+        ids = ",".join(clip_pairs)
+        archive_url = f"{self.base_url}/api/clips.zip?ids={ids}"
+        dest_path: Optional[str] = None
+        if output_path:
+            p = Path(output_path).expanduser().resolve()
+            p.parent.mkdir(parents=True, exist_ok=True)
+            with self._client() as client:
+                with client.stream("GET", "/api/clips.zip", params={"ids": ids}) as r:
+                    r.raise_for_status()
+                    with open(p, "wb") as f:
+                        for chunk in r.iter_bytes():
+                            f.write(chunk)
+            dest_path = str(p)
+        return {
+            "archive_url": archive_url,
+            "file_path": dest_path,
+            "clips_count": len(clip_pairs),
+        }
 
     def list_creators(self) -> Dict[str, Any]:
         with self._client() as client:
@@ -146,6 +236,20 @@ TOOLS = [
         },
     },
     {
+        "name": "peakcut_preview_url",
+        "description": "Preview a video URL before clipping: retrieves title, creator/uploader, duration, and thumbnail without downloading.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "YouTube, Twitch, or Kick link to preview.",
+                },
+            },
+            "required": ["url"],
+        },
+    },
+    {
         "name": "peakcut_list_jobs",
         "description": "List all video clipping jobs and their current processing status (transcribing, clipping, done).",
         "inputSchema": {
@@ -165,6 +269,56 @@ TOOLS = [
                 },
             },
             "required": ["job_id"],
+        },
+    },
+    {
+        "name": "peakcut_delete_job",
+        "description": "Delete a completed or failed clipping job and free disk space.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "job_id": {
+                    "type": "string",
+                    "description": "The unique ID of the job to delete.",
+                },
+            },
+            "required": ["job_id"],
+        },
+    },
+    {
+        "name": "peakcut_delete_clip",
+        "description": "Delete a specific generated clip from a job.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "job_id": {
+                    "type": "string",
+                    "description": "The job ID owning the clip.",
+                },
+                "clip_id": {
+                    "type": "string",
+                    "description": "The clip ID to delete (e.g. clip01).",
+                },
+            },
+            "required": ["job_id", "clip_id"],
+        },
+    },
+    {
+        "name": "peakcut_get_clip_media",
+        "description": "Get downloadable URLs and local absolute file paths for a rendered clip, thumbnail, and subtitle files.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "job_id": {
+                    "type": "string",
+                    "description": "The job ID owning the clip.",
+                },
+                "clip_id": {
+                    "type": "string",
+                    "description": "The clip highlight ID (e.g. clip01).",
+                },
+            },
+            "required": ["job_id", "clip_id"],
         },
     },
     {
@@ -205,7 +359,7 @@ TOOLS = [
     },
     {
         "name": "peakcut_render_clip",
-        "description": "Render a candidate clip into a vertical 9:16 video with animated karaoke captions.",
+        "description": "Render or re-render a candidate clip into a vertical 9:16 video with animated karaoke captions and customizable typography/metadata.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -219,11 +373,55 @@ TOOLS = [
                 },
                 "style": {
                     "type": "string",
-                    "description": "Caption typography preset: 's1' (bold yellow), 's2' (clean white), 's3' (gradient punch). Defaults to 's1'.",
-                    "enum": ["s1", "s2", "s3"],
+                    "description": "Caption typography preset: 'bounce' (yellow animated), 'hype' (high-contrast punch), 'clean' (subtle white).",
+                    "enum": ["bounce", "hype", "clean", "s1", "s2", "s3"],
+                },
+                "layout": {
+                    "type": "string",
+                    "description": "Visual layout: 'blur' (16:9 on blurred background), 'zoom' (zoomed + blur), 'crop' (9:16 centre crop).",
+                    "enum": ["blur", "zoom", "crop"],
+                },
+                "hook": {
+                    "type": "string",
+                    "description": "Custom hook banner text shown at the beginning (up to 60 characters).",
+                },
+                "title": {
+                    "type": "string",
+                    "description": "Custom title for the clip (up to 100 characters).",
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Custom description text (up to 2000 characters).",
+                },
+                "start": {
+                    "type": "number",
+                    "description": "Optional custom start timestamp in seconds.",
+                },
+                "end": {
+                    "type": "number",
+                    "description": "Optional custom end timestamp in seconds.",
                 },
             },
             "required": ["job_id", "clip_id"],
+        },
+    },
+    {
+        "name": "peakcut_export_clips_archive",
+        "description": "Export multiple clips as a single downloadable ZIP archive, optionally saving to a local disk path.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "clip_pairs": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of 'job_id.clip_id' pairs to include in the ZIP (e.g. ['20261115-135846-3497ea5560.clip01']).",
+                },
+                "output_path": {
+                    "type": "string",
+                    "description": "Optional local file path to save the downloaded zip archive (e.g. /home/user/clips.zip).",
+                },
+            },
+            "required": ["clip_pairs"],
         },
     },
     {
@@ -343,16 +541,40 @@ def dispatch_tool(client: PeakCutClient, name: str, args: Dict[str, Any]) -> Any
     """Execute a tool call against the PeakCut client and return JSON-serializable content."""
     if name == "peakcut_get_system_status":
         return client.get_status()
+    elif name == "peakcut_preview_url":
+        return client.preview_url(str(args.get("url", "")))
     elif name == "peakcut_list_jobs":
         return client.list_jobs()
     elif name == "peakcut_get_job":
         return client.get_job(str(args.get("job_id", "")))
+    elif name == "peakcut_delete_job":
+        return client.delete_job(str(args.get("job_id", "")))
+    elif name == "peakcut_delete_clip":
+        return client.delete_clip(str(args.get("job_id", "")), str(args.get("clip_id", "")))
+    elif name == "peakcut_get_clip_media":
+        return client.get_clip_media(str(args.get("job_id", "")), str(args.get("clip_id", "")))
     elif name == "peakcut_submit_video_url":
         return client.submit_video_url(str(args.get("url", "")), creator=args.get("creator"))
     elif name == "peakcut_upload_local_video":
         return client.upload_local_video(str(args.get("file_path", "")), creator=args.get("creator"))
     elif name == "peakcut_render_clip":
-        return client.render_clip(str(args.get("job_id", "")), str(args.get("clip_id", "")), style=str(args.get("style", "s1")))
+        start_val = float(args["start"]) if "start" in args and args["start"] is not None else None
+        end_val = float(args["end"]) if "end" in args and args["end"] is not None else None
+        return client.render_clip(
+            str(args.get("job_id", "")),
+            str(args.get("clip_id", "")),
+            style=args.get("style"),
+            layout=args.get("layout"),
+            hook=args.get("hook"),
+            title=args.get("title"),
+            description=args.get("description"),
+            start=start_val,
+            end=end_val,
+        )
+    elif name == "peakcut_export_clips_archive":
+        return client.export_clips_archive(
+            list(args.get("clip_pairs") or []), output_path=args.get("output_path")
+        )
     elif name == "peakcut_list_creators":
         return client.list_creators()
     elif name == "peakcut_create_creator":

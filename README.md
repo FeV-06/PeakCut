@@ -158,6 +158,26 @@ Add PeakCut to your AI agent's MCP settings (e.g. `claude_desktop_config.json`, 
 
 The server speaks standard JSON-RPC 2.0 over `stdio` and controls the running PeakCut web instance.
 
+#### Available MCP Tools
+
+| Tool | What it does |
+|---|---|
+| `peakcut_get_system_status` | Server metrics, queue depth, disk/upload limits, and active AI model |
+| `peakcut_preview_url` | Video metadata preview (title, uploader, duration, thumbnail) without downloading |
+| `peakcut_submit_video_url` | Queue YouTube, Twitch, or Kick video for clipping |
+| `peakcut_upload_local_video` | Ingest local `.mp4`/`.mov` files directly from disk |
+| `peakcut_list_jobs` | List active, queued, and completed clipping runs |
+| `peakcut_get_job` | Detailed job report with full transcript, scene cuts, and candidate clips |
+| `peakcut_get_clip_media` | Resolves downloadable streaming URLs and local file paths for finished clips |
+| `peakcut_render_clip` | Render/remake vertical 9:16 clips with customizable style, layout, hook, title, and timestamps |
+| `peakcut_export_clips_archive` | Download or stream multiple clips as a ZIP archive |
+| `peakcut_delete_job` / `peakcut_delete_clip` | Delete jobs or specific clips to free disk space |
+| `peakcut_list_creators` / `peakcut_create_creator` | Manage creator workspaces and channel links |
+| `peakcut_start_live_monitoring` | Live stream rolling-buffer monitoring |
+| `peakcut_capture_live_moment` | Force-cut highlight from active stream buffer |
+| `peakcut_stop_live_monitoring` | Terminate live capture worker |
+| `peakcut_list_connected_accounts` / `peakcut_publish_clip` | Auto-post to connected YouTube, TikTok, or Instagram accounts |
+
 ## Updating
 
 PeakCut checks GitHub every few hours. When a newer version is out, the dashboard shows a notice with what changed

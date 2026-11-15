@@ -29,13 +29,43 @@ class MockPeakCutClient(mcp.PeakCutClient):
     def get_status(self) -> Dict[str, Any]:
         return {"ready": True, "accounts": False, "ai": {"ready": True, "provider": "OmniRoute"}}
 
+    def preview_url(self, url: str) -> Dict[str, Any]:
+        if "youtube.com" not in url and "youtu.be" not in url:
+            raise ValueError("Invalid URL for preview")
+        return {"title": "Test Video", "uploader": "Creator", "duration": 120.0}
+
     def list_jobs(self) -> Dict[str, Any]:
         return {"jobs": [{"id": "job_123", "status": "done", "name": "sample_video"}]}
 
     def get_job(self, job_id: str) -> Dict[str, Any]:
         if job_id == "job_123":
-            return {"id": "job_123", "status": "done", "clips": [{"id": "c1", "score": 95}]}
+            return {"id": "job_123", "status": "done", "clips": [{"id": "c1", "score": 95, "status": "done"}]}
         raise ValueError("Job not found")
+
+    def delete_job(self, job_id: str) -> Dict[str, Any]:
+        if job_id == "job_123":
+            return {"ok": True}
+        raise ValueError("Job not found")
+
+    def delete_clip(self, job_id: str, clip_id: str) -> Dict[str, Any]:
+        if job_id == "job_123" and clip_id == "c1":
+            return {"ok": True}
+        raise ValueError("Clip not found")
+
+    def get_clip_media(self, job_id: str, clip_id: str) -> Dict[str, Any]:
+        if job_id == "job_123" and clip_id == "c1":
+            return {
+                "job_id": job_id,
+                "clip_id": clip_id,
+                "status": "done",
+                "media_url": f"http://127.0.0.1:8765/media/{job_id}/{clip_id}.mp4",
+                "thumbnail_url": f"http://127.0.0.1:8765/media/{job_id}/{clip_id}.jpg",
+                "download_url": f"http://127.0.0.1:8765/media/{job_id}/{clip_id}.mp4?download=1",
+                "file_path": "/fake/path/clip.mp4",
+                "subtitles_path": "/fake/path/clip.ass",
+                "clip": {"id": "c1", "score": 95},
+            }
+        raise ValueError("Clip not found")
 
     def submit_video_url(self, url: str, creator: Optional[str] = None, options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         if "youtube.com" not in url and "youtu.be" not in url and "twitch.tv" not in url:
@@ -45,8 +75,33 @@ class MockPeakCutClient(mcp.PeakCutClient):
     def upload_local_video(self, file_path: str, creator: Optional[str] = None) -> Dict[str, Any]:
         return {"id": "job_upload", "file": file_path, "status": "queued"}
 
-    def render_clip(self, job_id: str, clip_id: str, style: str = "s1") -> Dict[str, Any]:
-        return {"id": clip_id, "job_id": job_id, "style": style, "status": "rendering"}
+    def render_clip(
+        self,
+        job_id: str,
+        clip_id: str,
+        style: Optional[str] = None,
+        layout: Optional[str] = None,
+        hook: Optional[str] = None,
+        title: Optional[str] = None,
+        description: Optional[str] = None,
+        start: Optional[float] = None,
+        end: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        return {
+            "id": clip_id,
+            "job_id": job_id,
+            "style": style or "s1",
+            "layout": layout or "blur",
+            "hook": hook,
+            "title": title,
+            "description": description,
+            "start": start,
+            "end": end,
+            "status": "rendering",
+        }
+
+    def export_clips_archive(self, clip_pairs: List[str], output_path: Optional[str] = None) -> Dict[str, Any]:
+        return {"archive_url": "http://127.0.0.1:8765/api/clips.zip?ids=" + ",".join(clip_pairs), "file_path": output_path, "clips_count": len(clip_pairs)}
 
     def list_creators(self) -> Dict[str, Any]:
         return {"creators": [{"id": "cr_1", "name": "TechReviewer"}]}
@@ -113,11 +168,16 @@ def test_tools_list():
     tool_names = {t["name"] for t in tools}
     expected_tools = {
         "peakcut_get_system_status",
+        "peakcut_preview_url",
         "peakcut_list_jobs",
         "peakcut_get_job",
+        "peakcut_delete_job",
+        "peakcut_delete_clip",
+        "peakcut_get_clip_media",
         "peakcut_submit_video_url",
         "peakcut_upload_local_video",
         "peakcut_render_clip",
+        "peakcut_export_clips_archive",
         "peakcut_list_creators",
         "peakcut_create_creator",
         "peakcut_start_live_monitoring",
@@ -153,10 +213,22 @@ def test_tools_call():
     content = json.loads(res["result"]["content"][0]["text"])
     check("tools/call get_system_status content matches", content.get("ready") is True)
 
+    # Call peakcut_preview_url
+    req_prev = {
+        "jsonrpc": "2.0",
+        "id": 21,
+        "method": "tools/call",
+        "params": {"name": "peakcut_preview_url", "arguments": {"url": "https://youtu.be/sample1"}},
+    }
+    res_prev = mcp.handle_request(client, req_prev)
+    check("tools/call preview_url success", res_prev["result"].get("isError") is False)
+    prev_data = json.loads(res_prev["result"]["content"][0]["text"])
+    check("tools/call preview_url returns metadata", prev_data.get("title") == "Test Video")
+
     # Call peakcut_list_jobs
     req_jobs = {
         "jsonrpc": "2.0",
-        "id": 21,
+        "id": 22,
         "method": "tools/call",
         "params": {"name": "peakcut_list_jobs", "arguments": {}},
     }
@@ -165,10 +237,76 @@ def test_tools_call():
     jobs_content = json.loads(res_jobs["result"]["content"][0]["text"])
     check("tools/call list_jobs returns jobs list", len(jobs_content.get("jobs", [])) == 1)
 
+    # Call peakcut_get_clip_media
+    req_media = {
+        "jsonrpc": "2.0",
+        "id": 23,
+        "method": "tools/call",
+        "params": {"name": "peakcut_get_clip_media", "arguments": {"job_id": "job_123", "clip_id": "c1"}},
+    }
+    res_media = mcp.handle_request(client, req_media)
+    check("tools/call get_clip_media success", res_media["result"].get("isError") is False)
+    media_data = json.loads(res_media["result"]["content"][0]["text"])
+    check("tools/call get_clip_media contains media_url", "media/job_123/c1.mp4" in media_data.get("media_url", ""))
+
+    # Call peakcut_render_clip with full options
+    req_render = {
+        "jsonrpc": "2.0",
+        "id": 24,
+        "method": "tools/call",
+        "params": {
+            "name": "peakcut_render_clip",
+            "arguments": {
+                "job_id": "job_123",
+                "clip_id": "c1",
+                "style": "hype",
+                "layout": "crop",
+                "hook": "INSANE CLUTCH",
+                "title": "New Title",
+                "start": 10.5,
+                "end": 45.0,
+            },
+        },
+    }
+    res_render = mcp.handle_request(client, req_render)
+    check("tools/call render_clip with options success", res_render["result"].get("isError") is False)
+    render_data = json.loads(res_render["result"]["content"][0]["text"])
+    check("tools/call render_clip matches parameters", render_data.get("hook") == "INSANE CLUTCH" and render_data.get("start") == 10.5)
+
+    # Call peakcut_export_clips_archive
+    req_zip = {
+        "jsonrpc": "2.0",
+        "id": 25,
+        "method": "tools/call",
+        "params": {"name": "peakcut_export_clips_archive", "arguments": {"clip_pairs": ["job_123.c1"]}},
+    }
+    res_zip = mcp.handle_request(client, req_zip)
+    check("tools/call export_clips_archive success", res_zip["result"].get("isError") is False)
+
+    # Call peakcut_delete_clip
+    req_del_clip = {
+        "jsonrpc": "2.0",
+        "id": 26,
+        "method": "tools/call",
+        "params": {"name": "peakcut_delete_clip", "arguments": {"job_id": "job_123", "clip_id": "c1"}},
+    }
+    res_del_clip = mcp.handle_request(client, req_del_clip)
+    check("tools/call delete_clip success", res_del_clip["result"].get("isError") is False)
+
+    # Call peakcut_delete_job
+    req_del_job = {
+        "jsonrpc": "2.0",
+        "id": 27,
+        "method": "tools/call",
+        "params": {"name": "peakcut_delete_job", "arguments": {"job_id": "job_123"}},
+    }
+    res_del_job = mcp.handle_request(client, req_del_job)
+    check("tools/call delete_job success", res_del_job["result"].get("isError") is False)
+
     # Call peakcut_submit_video_url valid
     req_submit = {
         "jsonrpc": "2.0",
-        "id": 22,
+        "id": 28,
         "method": "tools/call",
         "params": {"name": "peakcut_submit_video_url", "arguments": {"url": "https://youtu.be/abc1234"}},
     }
@@ -178,7 +316,7 @@ def test_tools_call():
     # Call peakcut_submit_video_url invalid
     req_submit_err = {
         "jsonrpc": "2.0",
-        "id": 23,
+        "id": 29,
         "method": "tools/call",
         "params": {"name": "peakcut_submit_video_url", "arguments": {"url": "https://invalid.example/video"}},
     }
@@ -189,7 +327,7 @@ def test_tools_call():
     # Call unknown tool
     req_unknown = {
         "jsonrpc": "2.0",
-        "id": 24,
+        "id": 30,
         "method": "tools/call",
         "params": {"name": "peakcut_teleport", "arguments": {}},
     }
