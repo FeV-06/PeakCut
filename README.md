@@ -114,6 +114,7 @@ python -m studio.admin grant you@example.com
 | Part | What it is |
 |---|---|
 | `studio/` | The server: FastAPI, the clip pipeline, live recording, accounts |
+| `studio/mcp.py` | Model Context Protocol (MCP) server for AI agents (stdio JSON-RPC 2.0) |
 | `studio/ai.py` | The only file that talks to an AI service. Add a provider here |
 | `web/` | The pages: landing, sign-in, the app, the admin dashboard (plain HTML, CSS and JavaScript, no build step) |
 | `tests/` | Tests that run against a throwaway copy of the app |
@@ -123,6 +124,39 @@ Video work is done with `ffmpeg` and `yt-dlp`. Speech is transcribed with `sherp
 Data is kept per user: accounts in the database (SQLite on your own computer, PostgreSQL on a server), videos and
 clips in each user's own folder. [AGENTS.md](AGENTS.md) is a short map of the code for contributors and AI coding
 assistants.
+
+## AI Agents (MCP)
+
+PeakCut includes a built-in [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server so AI agents
+(Claude Desktop, Hermes Agent, Cursor, OpenCode) can submit videos, inspect transcripts, render clips, monitor live
+streams, and queue posts.
+
+Start the MCP server with:
+
+```bash
+python -m studio.mcp
+```
+
+### Agent configuration
+
+Add PeakCut to your AI agent's MCP settings (e.g. `claude_desktop_config.json`, `.cursor/mcp.json`, or Hermes config):
+
+```json
+{
+  "mcpServers": {
+    "peakcut": {
+      "command": "python",
+      "args": ["-m", "studio.mcp"],
+      "cwd": "/path/to/peakcut",
+      "env": {
+        "PEAKCUT_URL": "http://127.0.0.1:8765"
+      }
+    }
+  }
+}
+```
+
+The server speaks standard JSON-RPC 2.0 over `stdio` and controls the running PeakCut web instance.
 
 ## Updating
 

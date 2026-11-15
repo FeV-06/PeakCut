@@ -6,6 +6,7 @@ A short map for contributors and AI coding assistants.
 
 - Run: `python -m studio.server` (settings from `.env`; see `.env.example`). Needs Python 3.10+ and `ffmpeg`.
 - Speech model, once: `python -m studio.fetch_model`.
+- MCP server for AI agents: `python -m studio.mcp` (connects to the running server).
 - Tests: `python tests/run.py`. It starts a throwaway copy on a spare port with an empty data folder. Run it
   before and after any change to `studio/`. No keys needed.
 - To try a risky change by hand without touching real data:
@@ -16,6 +17,7 @@ A short map for contributors and AI coding assistants.
 | File | What it does |
 |---|---|
 | `studio/server.py` | Every web route, and the gate that runs before each request (who is asking, limits, headers) |
+| `studio/mcp.py` | Model Context Protocol (MCP) server for AI agents (stdio JSON-RPC 2.0) |
 | `studio/config.py` | Every setting, read from environment variables |
 | `studio/ai.py` | The only code that talks to an AI service, and the AI settings saved from the dashboard (`ai.json` in the data folder) |
 | `studio/brain.py` | The prompts: finding clips, live judging, hooks and titles, caption fixes |
