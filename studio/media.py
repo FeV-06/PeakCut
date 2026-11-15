@@ -133,10 +133,29 @@ def youtube_words(url: str):
     with _youtube_guard(url), _ydl({}) as ydl:
         i = ydl.extract_info(url, download=False)
         auto = i.get("automatic_captions") or {}
-        key = next((k for k in auto if k.endswith("-orig")), None)
-        if not key and i.get("language") in auto:
-            key = i["language"]
-        track = next((f for f in auto.get(key) or [] if f.get("ext") == "json3" and f.get("url")), None) if key else None
+        sub = i.get("subtitles") or {}
+        lang = str(i.get("language") or "").strip().lower()
+        base = lang.split("-")[0] if lang else ""
+        candidates = [
+            f"{lang}-orig", lang,
+            f"{base}-orig", base,
+            "en-orig", "en", "en-US", "en-GB",
+        ]
+        key = None
+        source = auto
+        for c in candidates:
+            if not c:
+                continue
+            if c in sub:
+                key, source = c, sub
+                break
+            if c in auto:
+                key, source = c, auto
+                break
+        if not key:
+            key = next((k for k in auto if k.endswith("-orig")), None)
+            source = auto
+        track = next((f for f in source.get(key) or [] if f.get("ext") == "json3" and f.get("url")), None) if key else None
         if not track:
             return None
         raw = ydl.urlopen(track["url"]).read(40_000_000)
